@@ -3,13 +3,13 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Estrategista de Grand Prix</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      font-size: 14px; /* Base ligeiramente menor para mobile */
+      font-size: 13px; /* Escala base reduzida para dispositivos móveis */
     }
     @media (min-width: 768px) {
       :root {
@@ -22,18 +22,35 @@
       color: #f8fafc;
       overflow-x: hidden;
       -webkit-font-smoothing: antialiased;
+      /* Previne bounce no iOS e melhora scroll */
+      overscroll-behavior-y: none;
     }
     .font-mono {
       font-family: 'JetBrains+Mono', monospace;
     }
-    /* Scrollbar sutil para mobile */
+    /* Scrollbar minimalista */
     ::-webkit-scrollbar {
-      width: 4px;
+      width: 3px;
     }
     ::-webkit-scrollbar-thumb {
-      background: #334155;
+      background: rgba(51, 65, 85, 0.5);
       border-radius: 10px;
     }
+    /* Ajustes finos para layouts apertados */
+    .compact-grid {
+      display: grid;
+      gap: 0.75rem;
+    }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    @keyframes bounceIn {
+      0% { transform: scale(0.9); opacity: 0; }
+      70% { transform: scale(1.05); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .animate-fadeIn { animation: fadeIn 0.4s ease-out; }
+    .animate-slideUp { animation: slideUp 0.5s ease-out; }
+    .animate-bounceIn { animation: bounceIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
   </style>
 <script type="importmap">
 {

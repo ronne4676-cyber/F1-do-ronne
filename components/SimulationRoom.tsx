@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Team, RaceResult, RaceStrategy, Weather, Track, Penalty, TireCompound } from '../types';
+import { Team, RaceResult, RaceStrategy, Weather, Track, Penalty, TireCompound, Driver } from '../types';
 import { CALENDAR } from '../constants';
 import { generateRaceCommentary, conductBandInterview } from '../services/geminiService';
 import { playConfirmSFX, playRaceStartSFX, playNotificationSFX } from '../utils/audio';
@@ -15,6 +15,10 @@ interface SimulationRoomProps {
 
 type RaceEvent = 'NORMAL' | 'SAFETY_CAR' | 'VSC' | 'YELLOW_FLAG';
 
+interface ExtendedRaceResult extends RaceResult {
+  drivers: Driver[];
+}
+
 const SimulationRoom: React.FC<SimulationRoomProps> = ({ userTeam, rivals, round, onFinish }) => {
   const [stage, setStage] = useState<'IDLE' | 'SETUP' | 'QUALIFYING' | 'RACE' | 'RESULTS'>('IDLE');
   const [strategy, setStrategy] = useState<RaceStrategy>(RaceStrategy.BALANCED);
@@ -22,7 +26,7 @@ const SimulationRoom: React.FC<SimulationRoomProps> = ({ userTeam, rivals, round
   const [nextTireCompound, setNextTireCompound] = useState<TireCompound>(TireCompound.MEDIUM);
   const [isPaused, setIsPaused] = useState(false);
   const [currentLap, setCurrentLap] = useState(0);
-  const [grid, setGrid] = useState<RaceResult[]>([]);
+  const [grid, setGrid] = useState<ExtendedRaceResult[]>([]);
   const [commentary, setCommentary] = useState<string>('Aguardando sinal verde...');
   const [interview, setInterview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -47,25 +51,20 @@ const SimulationRoom: React.FC<SimulationRoomProps> = ({ userTeam, rivals, round
     
     let base = (stats.power * 0.4) + (stats.aero * 4.0) + (stats.ers * 1.5);
     
-    // Tire multiplier
     let tireMult = 1.0;
     if (compound === TireCompound.SOFT) tireMult = 1.05;
     if (compound === TireCompound.HARD) tireMult = 0.95;
 
-    // Strategy multiplier
     let stratMult = 1.0;
     if (strat === RaceStrategy.AGGRESSIVE) stratMult = 1.08;
     if (strat === RaceStrategy.CONSERVATIVE) stratMult = 0.92;
 
-    // Wear penalty (cliff)
     let wearPenalty = 0;
     if (wear > 65) wearPenalty = (wear - 65) * 1.8;
     if (wear > 88) wearPenalty = 150; 
 
-    // Engine integrity penalty
     let enginePenalty = engineCond < 35 ? (35 - engineCond) * 0.8 : 0;
 
-    // Race Event Compression
     let eventMult = 1.0;
     if (raceEvent === 'SAFETY_CAR' || raceEvent === 'VSC') eventMult = 0.3;
 
@@ -78,16 +77,17 @@ const SimulationRoom: React.FC<SimulationRoomProps> = ({ userTeam, rivals, round
     setStage('QUALIFYING');
     await new Promise(r => setTimeout(r, 1000));
     
-    const initialTeams = [userTeam, ...rivals].map((t) => ({
+    const initialTeams: ExtendedRaceResult[] = [userTeam, ...rivals].map((t) => ({
       teamId: t.id,
       teamName: t.name,
       position: 0,
       performance: 0,
-      commentary: 'Largada limpa.',
+      commentary: 'Largada.',
       currentGap: 0,
       tireWear: 0,
       engineCondition: t.engine.condition || 100,
-      dnf: false
+      dnf: false,
+      drivers: t.drivers
     }));
 
     setGrid(initialTeams.sort((a, b) => Math.random() - 0.5).map((t, i) => ({...t, position: i + 1})));
@@ -95,7 +95,7 @@ const SimulationRoom: React.FC<SimulationRoomProps> = ({ userTeam, rivals, round
     playRaceStartSFX();
     setLoading(false);
     setCurrentLap(1);
-    setNextTireCompound(TireCompound.MEDIUM); // Default next choice
+    setNextTireCompound(TireCompound.MEDIUM);
   };
 
   useEffect(() => {
@@ -103,7 +103,7 @@ const SimulationRoom: React.FC<SimulationRoomProps> = ({ userTeam, rivals, round
       raceInterval.current = window.setInterval(() => {
         setCurrentLap(prev => prev + 1);
         processLap();
-      }, 1200);
+      }, 1000);
     } else {
       if (raceInterval.current) clearInterval(raceInterval.current);
     }
@@ -111,7 +111,6 @@ const SimulationRoom: React.FC<SimulationRoomProps> = ({ userTeam, rivals, round
   }, [stage, isPaused, currentLap, raceEvent]);
 
   const processLap = () => {
-    // Random Events Check
     if (raceEvent === 'NORMAL' && Math.random() < 0.04) {
       const roll = Math.random();
       if (roll < 0.4) {
@@ -136,14 +135,13 @@ const SimulationRoom: React.FC<SimulationRoomProps> = ({ userTeam, rivals, round
       const newGrid = prevGrid.map(team => {
         if (team.dnf) return team;
 
-        const teamObj = [userTeam, ...rivals].find(t => t.id === team.teamId);
-        if (!teamObj) return team;
+        const teamData = [userTeam, ...rivals].find(t => t.id === team.teamId);
+        if (!teamData) return team;
         
         const isUser = team.teamId === userTeam.id;
         const currentCompound = isUser ? tireCompound : TireCompound.MEDIUM;
         const strat = isUser ? strategy : RaceStrategy.BALANCED;
         
-        // Wear Calculation
         let lapWear = (raceEvent === 'SAFETY_CAR' || raceEvent === 'VSC') ? 0.3 : 1.0;
         if (currentCompound === TireCompound.SOFT) lapWear *= 2.2;
         if (currentCompound === TireCompound.HARD) lapWear *= 0.65;
@@ -153,34 +151,31 @@ const SimulationRoom: React.FC<SimulationRoomProps> = ({ userTeam, rivals, round
         const engineDamage = (raceEvent === 'NORMAL' ? (Math.random() * 0.4) : 0.1) + (strat === RaceStrategy.AGGRESSIVE ? 0.2 : 0);
         const newEngineCond = Math.max(0, team.engineCondition - engineDamage);
 
-        // DNF Risk
         if (newEngineCond < 15 && Math.random() < 0.08) {
-          return { ...team, dnf: true, commentary: 'DNF: MOTOR' };
+          return { ...team, dnf: true, commentary: 'DNF MOTOR' };
         }
         if (newWear > 92 && Math.random() < 0.12) {
-          return { ...team, dnf: true, commentary: 'DNF: PNEU' };
+          return { ...team, dnf: true, commentary: 'DNF PNEU' };
         }
 
         let currentCommentary = '';
         let currentTireWear = newWear;
         let currentPerf = team.performance;
 
-        // Pit Stop Execution
         if (isUser && pitPending) {
           const timeLost = (raceEvent === 'SAFETY_CAR' || raceEvent === 'VSC') ? 12 : 25;
           currentPerf -= timeLost;
           currentTireWear = 0;
           setTireCompound(nextTireCompound);
           setPitPending(false);
-          currentCommentary = `Pit Stop: ${nextTireCompound}`;
+          currentCommentary = `Pit Stop Done`;
         } else if (!isUser && team.tireWear > 75) {
-          // AI Pit Strategy
           currentPerf -= 25;
           currentTireWear = 0;
-          currentCommentary = 'Pit Stop (AI)';
+          currentCommentary = 'Pit In';
         }
 
-        const lapPerf = calculateLapPerformance(teamObj, strat, currentTireWear, currentCompound, newEngineCond);
+        const lapPerf = calculateLapPerformance(teamData, strat, currentTireWear, currentCompound, newEngineCond);
 
         return { 
           ...team, 
@@ -200,7 +195,7 @@ const SimulationRoom: React.FC<SimulationRoomProps> = ({ userTeam, rivals, round
       return sorted.map((t, i) => {
         const oldPos = prevGrid.find(p => p.teamId === t.teamId)?.position || 0;
         let c = t.commentary;
-        if (!t.dnf && !c && oldPos > (i + 1)) c = "ULTRAPASSAGEM";
+        if (!t.dnf && !c && oldPos > (i + 1)) c = "GAP CLOSE";
         
         return {
           ...t, 
@@ -231,249 +226,138 @@ const SimulationRoom: React.FC<SimulationRoomProps> = ({ userTeam, rivals, round
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-700 rounded-3xl overflow-hidden animate-fadeIn max-w-5xl mx-auto shadow-2xl">
-      {/* Race Header Status */}
-      <div className={`p-6 border-b transition-colors duration-500 flex justify-between items-center backdrop-blur-md ${
-        raceEvent === 'SAFETY_CAR' ? 'bg-yellow-600/90 border-yellow-500' :
+    <div className="bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden animate-fadeIn max-w-5xl mx-auto shadow-2xl">
+      <div className={`p-4 lg:p-6 border-b flex justify-between items-center ${
+        raceEvent === 'SAFETY_CAR' ? 'bg-yellow-600 border-yellow-500' :
         raceEvent === 'VSC' ? 'bg-yellow-600/60 border-yellow-500' :
-        raceEvent === 'YELLOW_FLAG' ? 'bg-yellow-900/40 border-yellow-700' :
         'bg-slate-800/80 border-slate-700'
       }`}>
-        <div className="flex items-center gap-4">
-          <div className={`${raceEvent !== 'NORMAL' ? 'bg-black text-yellow-400 animate-pulse' : 'bg-red-600 text-white'} p-2 rounded-xl shadow-lg`}>
-            {raceEvent === 'SAFETY_CAR' ? <AlertTriangle size={24} /> : <Timer size={24} />}
+        <div className="flex items-center gap-3">
+          <div className="bg-red-600 p-1.5 rounded-lg">
+            <Timer size={18} className="text-white" />
           </div>
           <div>
-            <h2 className="text-2xl font-black italic uppercase tracking-tighter text-white">
-              {stage === 'RACE' ? (
-                <div className="flex items-center gap-3">
-                  Volta {currentLap}/{currentTrack.laps}
-                  {raceEvent !== 'NORMAL' && (
-                    <span className="text-xs bg-black/40 px-2 py-0.5 rounded-full border border-yellow-500/50">
-                      {raceEvent.replace('_', ' ')}
-                    </span>
-                  )}
-                </div>
-              ) : stage === 'IDLE' ? 'Estratégia Inicial' : 'Fim de Prova'}
+            <h2 className="text-sm lg:text-lg font-black italic uppercase text-white">
+              {stage === 'RACE' ? `VOLTA ${currentLap}/${currentTrack.laps}` : 'PIT WALL'}
             </h2>
-            <p className="text-slate-300 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2">
-              <Disc size={10} className={stage === 'RACE' && !isPaused ? 'animate-spin' : ''} /> {currentTrack.name} • {weather}
+            <p className="text-[8px] lg:text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+              {currentTrack.name} • {weather}
             </p>
           </div>
         </div>
-
         {stage === 'RACE' && (
-          <div className="flex gap-2">
-            <button onClick={() => setIsPaused(!isPaused)} className="p-3 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all border border-white/5">
-              {isPaused ? <Play size={16} fill="currentColor" /> : <Pause size={16} fill="currentColor" />}
-            </button>
-          </div>
+          <button onClick={() => setIsPaused(!isPaused)} className="p-2 bg-white/10 rounded-lg text-white">
+            {isPaused ? <Play size={14} fill="currentColor" /> : <Pause size={14} fill="currentColor" />}
+          </button>
         )}
       </div>
 
-      <div className="p-6 lg:p-8 min-h-[500px]">
+      <div className="p-3 lg:p-6 min-h-[400px]">
         {stage === 'IDLE' && (
-          <div className="flex flex-col items-center justify-center h-full text-center space-y-6 py-12">
-            <img src={`https://flagsapi.com/${currentTrack.countryCode}/flat/64.png`} className="w-20 shadow-2xl rounded" />
-            <div className="space-y-2">
-              <h3 className="text-4xl font-black italic uppercase text-white">{currentTrack.country}</h3>
-              <p className="text-slate-500 max-w-sm">Selecione o pneu de largada para {userTeam.name}.</p>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-2xl">
-              {[
-                { id: TireCompound.SOFT, name: 'Macio', color: 'bg-red-500', icon: '🔴', desc: 'Ataque inicial' },
-                { id: TireCompound.MEDIUM, name: 'Médio', color: 'bg-yellow-500', icon: '🟡', desc: 'Versátil' },
-                { id: TireCompound.HARD, name: 'Duro', color: 'bg-slate-100', icon: '⚪', desc: 'Resistência' }
-              ].map(t => (
-                <button 
-                  key={t.id}
-                  onClick={() => setTireCompound(t.id)}
-                  className={`p-6 rounded-3xl border-2 transition-all text-left group ${tireCompound === t.id ? 'border-blue-500 bg-blue-500/10' : 'border-slate-800 bg-slate-900/50 hover:border-slate-700'}`}
-                >
-                  <div className="flex justify-between items-center mb-4">
-                    <span className="text-2xl group-hover:scale-110 transition-transform">{t.icon}</span>
-                    <div className={`w-4 h-4 rounded-full ${t.color} shadow-[0_0_10px_rgba(255,255,255,0.2)]`} />
-                  </div>
-                  <h4 className="text-sm font-black uppercase text-white tracking-widest">{t.name}</h4>
-                  <p className="text-[10px] text-slate-500 mt-1 font-medium">{t.desc}</p>
+          <div className="flex flex-col items-center justify-center py-10 space-y-6 text-center">
+            <img src={`https://flagsapi.com/${currentTrack.countryCode}/flat/64.png`} className="w-16 rounded shadow-lg" />
+            <h3 className="text-3xl font-black italic uppercase text-white">{currentTrack.country}</h3>
+            <div className="grid grid-cols-3 gap-2 w-full max-w-md">
+              {[TireCompound.SOFT, TireCompound.MEDIUM, TireCompound.HARD].map(t => (
+                <button key={t} onClick={() => setTireCompound(t)} className={`p-4 rounded-xl border-2 ${tireCompound === t ? 'border-white bg-white/10' : 'border-slate-800'}`}>
+                  <div className={`w-3 h-3 rounded-full mx-auto mb-2 ${t === TireCompound.SOFT ? 'bg-red-500' : t === TireCompound.MEDIUM ? 'bg-yellow-500' : 'bg-slate-300'}`} />
+                  <span className="text-[9px] font-black uppercase text-white">{t}</span>
                 </button>
               ))}
             </div>
-
-            <button onClick={startRace} className="px-12 py-5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black text-2xl uppercase italic tracking-widest shadow-xl transition-all hover:scale-105 active:scale-95 flex items-center gap-4">
-              <Play size={24} fill="currentColor" /> Ir para o Grid
+            <button onClick={startRace} className="w-full max-w-xs py-4 bg-emerald-600 text-white rounded-xl font-black uppercase italic tracking-widest shadow-xl">
+              Iniciar Largada
             </button>
           </div>
         )}
 
         {stage === 'RACE' && (
-          <div className="flex flex-col lg:flex-row gap-8">
-            <div className="flex-1 space-y-4">
-              <div className="bg-slate-950/40 rounded-3xl border border-slate-800 p-6 shadow-inner">
-                <div className="grid grid-cols-12 text-[9px] font-black text-slate-600 uppercase tracking-widest pb-4 border-b border-slate-800/50 mb-4 px-2">
+          <div className="flex flex-col lg:flex-row gap-4">
+            <div className="flex-1 space-y-3">
+              <div className="bg-slate-950/40 rounded-xl border border-slate-800 overflow-hidden">
+                <div className="grid grid-cols-12 text-[7px] font-black text-slate-500 uppercase tracking-widest p-2 bg-slate-900/50">
                   <div className="col-span-1">P</div>
-                  <div className="col-span-6">Escuderia</div>
-                  <div className="col-span-3 text-center">Status Pneu</div>
-                  <div className="col-span-2 text-right">Gap</div>
+                  <div className="col-span-8">Pilotos / Escuderia</div>
+                  <div className="col-span-3 text-right">Intervalo</div>
                 </div>
-                <div className="space-y-1">
+                <div className="divide-y divide-slate-800/50">
                   {grid.map((team, idx) => (
-                    <div key={team.teamId} className={`grid grid-cols-12 items-center p-2.5 rounded-xl text-xs font-bold border transition-all ${team.teamId === userTeam.id ? 'bg-blue-600/20 border-blue-500/50 text-white scale-[1.02] shadow-lg' : team.dnf ? 'bg-red-950/20 opacity-50 border-red-900/30' : 'bg-slate-900/30 border-transparent text-slate-400'}`}>
-                      <div className="col-span-1 font-black italic">{team.dnf ? 'DNF' : team.position}</div>
-                      <div className="col-span-6 flex items-center gap-3">
-                        <div className="w-1.5 h-5 rounded-full" style={{backgroundColor: team.teamId === userTeam.id ? userTeam.color : rivals.find(r => r.id === team.teamId)?.color}} />
-                        <span className="truncate uppercase tracking-tighter">{team.teamName}</span>
-                        {team.commentary && <span className="text-[8px] bg-white/10 text-white px-2 py-0.5 rounded-full border border-white/20 animate-pulse truncate max-w-[80px]">{team.commentary}</span>}
-                      </div>
-                      <div className="col-span-3 px-4">
-                        <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700/50">
-                           <div className={`h-full transition-all duration-700 ${team.tireWear > 70 ? 'bg-red-500' : team.tireWear > 40 ? 'bg-yellow-500' : 'bg-emerald-500'}`} style={{ width: `${team.tireWear}%` }} />
+                    <div key={team.teamId} className={`grid grid-cols-12 items-center p-2 text-[10px] ${team.teamId === userTeam.id ? 'bg-blue-600/10' : ''}`}>
+                      <div className="col-span-1 font-black text-slate-400">{team.dnf ? 'DNF' : team.position}</div>
+                      <div className="col-span-8 flex items-center gap-2">
+                        <div className="w-1 h-6 rounded-full" style={{backgroundColor: team.teamId === userTeam.id ? userTeam.color : rivals.find(r => r.id === team.teamId)?.color}} />
+                        <div className="flex flex-col min-w-0">
+                          <div className="flex items-center gap-1">
+                            <span className="font-black text-white uppercase truncate text-[9px]">
+                              {team.drivers[0]?.name.split(' ').pop()} 
+                              <span className="text-slate-500 ml-1">/ {team.drivers[1]?.name.split(' ').pop()}</span>
+                            </span>
+                          </div>
+                          <span className="text-[7px] text-slate-500 font-bold uppercase truncate">{team.teamName}</span>
                         </div>
+                        {team.commentary && <span className="text-[6px] bg-white/5 text-blue-400 px-1 rounded border border-blue-500/20 animate-pulse">{team.commentary}</span>}
                       </div>
-                      <div className="col-span-2 text-right font-mono text-[10px] text-slate-500">
-                         {team.dnf ? '---' : team.position === 1 ? 'LÍDER' : `+${team.currentGap.toFixed(1)}s`}
+                      <div className="col-span-3 text-right font-mono text-[9px] text-slate-400">
+                        {team.dnf ? '---' : team.position === 1 ? 'LÍDER' : `+${team.currentGap.toFixed(1)}s`}
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
-
-              {/* Live Commentary / Strategic Info */}
-              <div className="bg-slate-800/30 border border-slate-700 p-4 rounded-2xl flex items-center gap-4">
-                <Radio className="text-blue-400 shrink-0" size={18} />
-                <p className="text-[10px] font-bold text-slate-300 uppercase italic">
-                  {raceEvent === 'SAFETY_CAR' ? 'Direção de Prova: Carro de Segurança na pista. Velocidade reduzida.' : 
-                   pitPending ? `Estratégia: Parada confirmada para a próxima volta. Novos pneus ${nextTireCompound}.` :
-                   'Engenheiro: Monitorando o desgaste dos pneus e a temperatura do motor.'}
-                </p>
-              </div>
             </div>
 
-            {/* Strategic Controls */}
-            <div className="w-full lg:w-80 space-y-6">
-               <div className="bg-slate-800/50 border border-slate-700 p-6 rounded-[2.5rem] space-y-8 shadow-2xl">
-                 <div>
-                   <div className="flex items-center gap-2 mb-4">
-                     <Flame className="text-orange-400" size={18} />
-                     <h3 className="text-xs font-black uppercase tracking-widest text-white">Estratégia de Ritmo</h3>
-                   </div>
-                   <div className="grid grid-cols-1 gap-2">
-                      {[
-                        { id: RaceStrategy.AGGRESSIVE, label: 'Push (Agressivo)', icon: <FastForward size={14} />, color: 'border-red-500 bg-red-500/10 text-red-400' },
-                        { id: RaceStrategy.BALANCED, label: 'Equilibrado', icon: <Scale size={14} />, color: 'border-blue-500 bg-blue-500/10 text-blue-400' },
-                        { id: RaceStrategy.CONSERVATIVE, label: 'Poupando (Eco)', icon: <Shield size={14} />, color: 'border-emerald-500 bg-emerald-500/10 text-emerald-400' }
-                      ].map(s => (
-                        <button 
-                          key={s.id} 
-                          onClick={() => { setStrategy(s.id); playConfirmSFX(); }}
-                          className={`w-full py-4 px-5 rounded-2xl border-2 flex items-center justify-between transition-all group ${strategy === s.id ? s.color : 'border-slate-800 text-slate-500 hover:border-slate-700'}`}
-                        >
-                           <span className="text-[10px] font-black uppercase italic tracking-tighter">{s.label}</span>
-                           <div className="group-hover:scale-110 transition-transform">{s.icon}</div>
-                        </button>
-                      ))}
-                   </div>
-                 </div>
-
-                 <div className="pt-6 border-t border-slate-700/50">
-                    <div className="flex items-center gap-2 mb-4">
-                      <Coffee className="text-emerald-400" size={18} />
-                      <h3 className="text-xs font-black uppercase tracking-widest text-white">Menu de Pit Stop</h3>
-                    </div>
-                    
-                    <div className="grid grid-cols-3 gap-2 mb-4">
-                      {[
-                        { id: TireCompound.SOFT, color: 'bg-red-500' },
-                        { id: TireCompound.MEDIUM, color: 'bg-yellow-500' },
-                        { id: TireCompound.HARD, color: 'bg-slate-100' }
-                      ].map(t => (
-                        <button 
-                          key={t.id}
-                          onClick={() => { setNextTireCompound(t.id); playConfirmSFX(); }}
-                          className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-2 ${nextTireCompound === t.id ? 'border-emerald-500 bg-emerald-500/10' : 'border-slate-800 bg-slate-900/50'}`}
-                        >
-                          <div className={`w-3 h-3 rounded-full ${t.color} shadow-sm`} />
-                          <span className="text-[8px] font-black text-white uppercase">{t.id}</span>
-                        </button>
-                      ))}
-                    </div>
-
-                    <button 
-                      onClick={() => handleBoxBox(nextTireCompound)} 
-                      disabled={pitPending} 
-                      className={`w-full py-5 rounded-2xl font-black uppercase italic tracking-widest text-lg transition-all shadow-xl flex items-center justify-center gap-3 border-2 ${
-                        pitPending ? 'bg-slate-800 text-slate-600 border-slate-700 cursor-not-allowed' : 
-                        raceEvent === 'SAFETY_CAR' ? 'bg-white text-emerald-600 border-emerald-500 animate-pulse' :
-                        'bg-white text-slate-900 border-white hover:bg-emerald-400 hover:text-white'
-                      }`}
-                    >
-                      {pitPending ? 'RECOLHENDO...' : 'BOX BOX BOX'}
+            <div className="lg:w-72 space-y-3">
+              <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700 space-y-4">
+                <div className="flex gap-2">
+                  {[RaceStrategy.AGGRESSIVE, RaceStrategy.BALANCED, RaceStrategy.CONSERVATIVE].map(s => (
+                    <button key={s} onClick={() => setStrategy(s)} className={`flex-1 p-2 rounded-lg text-[8px] font-black uppercase border-2 transition-all ${strategy === s ? 'bg-blue-600 border-white text-white' : 'bg-slate-900 border-slate-800 text-slate-500'}`}>
+                      {s.slice(0, 4)}
                     </button>
-                    {raceEvent === 'SAFETY_CAR' && !pitPending && (
-                      <p className="text-[8px] font-black text-emerald-400 uppercase tracking-widest mt-3 text-center animate-bounce">
-                        Janela Ideal: Pit Stop sob SC!
-                      </p>
-                    )}
-                 </div>
-               </div>
+                  ))}
+                </div>
+                
+                <div className="pt-2 border-t border-slate-700/50">
+                  <div className="grid grid-cols-3 gap-1 mb-2">
+                    {[TireCompound.SOFT, TireCompound.MEDIUM, TireCompound.HARD].map(t => (
+                      <button key={t} onClick={() => setNextTireCompound(t)} className={`p-2 rounded-lg border-2 text-[8px] font-black ${nextTireCompound === t ? 'border-emerald-500 bg-emerald-500/10 text-white' : 'border-slate-900 bg-slate-950 text-slate-600'}`}>
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={() => handleBoxBox(nextTireCompound)} disabled={pitPending} className={`w-full py-3 rounded-lg font-black uppercase text-xs shadow-lg ${pitPending ? 'bg-slate-700 text-slate-500' : 'bg-white text-slate-950 hover:bg-emerald-400'}`}>
+                    {pitPending ? 'PIT IN...' : 'BOX BOX BOX'}
+                  </button>
+                </div>
+              </div>
 
-               <div className="bg-slate-950/80 border border-slate-800 p-6 rounded-[2rem] space-y-4 shadow-xl">
-                  <div className="flex justify-between items-center text-xs font-bold text-slate-500">
-                     <span className="uppercase">Saúde do Motor</span>
-                     <div className="flex items-center gap-2">
-                        <Thermometer size={14} className={grid.find(t => t.teamId === userTeam.id)?.engineCondition < 30 ? 'text-red-500 animate-pulse' : 'text-blue-400'} />
-                        <span className="font-mono text-white">{grid.find(t => t.teamId === userTeam.id)?.engineCondition.toFixed(1)}%</span>
-                     </div>
-                  </div>
-                  <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: `${grid.find(t => t.teamId === userTeam.id)?.engineCondition}%` }} />
-                  </div>
-               </div>
+              <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-800 flex justify-between items-center">
+                 <div className="flex items-center gap-2">
+                   <Thermometer size={12} className="text-blue-400" />
+                   <span className="text-[9px] font-black text-slate-400 uppercase">Engine</span>
+                 </div>
+                 <span className="font-mono text-[10px] text-white">{grid.find(t => t.teamId === userTeam.id)?.engineCondition.toFixed(0)}%</span>
+              </div>
             </div>
           </div>
         )}
 
         {stage === 'RESULTS' && (
-           <div className="max-w-3xl mx-auto space-y-8 animate-slideUp">
-              <div className="bg-slate-800 border border-slate-700 p-10 rounded-[3rem] text-center space-y-8 shadow-2xl relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-600 via-emerald-500 to-blue-600" />
-                
-                <div className="w-20 h-20 bg-emerald-500/10 border border-emerald-500/20 rounded-[2rem] flex items-center justify-center mx-auto mb-2 text-emerald-500 shadow-xl">
-                  <Flag size={40} />
-                </div>
-                
-                <div>
-                  <h3 className="text-4xl font-black italic uppercase text-white tracking-tighter mb-2">Grand Prix Encerrado</h3>
-                  <p className="text-slate-400 italic text-sm leading-relaxed max-w-lg mx-auto">"{commentary}"</p>
-                </div>
+           <div className="max-w-2xl mx-auto py-10 space-y-6 text-center animate-slideUp">
+              <div className="bg-slate-800 border border-slate-700 p-8 rounded-3xl space-y-6 shadow-2xl">
+                <Flag size={32} className="mx-auto text-emerald-500" />
+                <h3 className="text-2xl font-black italic uppercase text-white">Bandeira Quadriculada</h3>
+                <p className="text-slate-400 text-xs italic px-4">"{commentary}"</p>
                 
                 {interview && (
-                  <div className="bg-blue-600/5 border border-blue-500/20 p-8 rounded-[2.5rem] text-left relative group">
-                    <div className="absolute -top-3 left-8 bg-blue-600 text-white px-4 py-1 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg">
-                      <Mic2 size={12} /> Exclusivo Band F1
-                    </div>
-                    <p className="text-sm font-medium text-slate-200 leading-relaxed italic pr-12">"{interview}"</p>
-                    <div className="mt-6 flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-slate-700 border border-slate-600 flex items-center justify-center text-slate-400">
-                        <Radio size={20} />
-                      </div>
-                      <div>
-                        <div className="text-[10px] font-black uppercase text-white">Mariana Becker</div>
-                        <div className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Paddock Live • São Paulo</div>
-                      </div>
-                    </div>
+                  <div className="bg-blue-900/10 border-l-4 border-blue-500 p-4 rounded-r-xl text-left">
+                    <p className="text-[10px] text-slate-300 leading-relaxed italic">"{interview}"</p>
+                    <p className="text-[8px] font-black text-blue-400 mt-2 uppercase tracking-widest">Mariana Becker • Band F1</p>
                   </div>
                 )}
 
-                <div className="pt-6">
-                  <button 
-                    onClick={() => onFinish(grid, commentary, interview || undefined)}
-                    className="w-full py-6 bg-white text-slate-900 rounded-2xl font-black uppercase italic tracking-widest text-xl hover:bg-emerald-400 hover:text-white transition-all shadow-2xl active:scale-95 flex items-center justify-center gap-4"
-                  >
-                    Confirmar Weekend <ChevronRight size={24} />
-                  </button>
-                </div>
+                <button onClick={() => onFinish(grid, commentary, interview || undefined)} className="w-full py-4 bg-white text-slate-950 rounded-xl font-black uppercase italic tracking-widest text-sm shadow-xl hover:bg-emerald-400 transition-all flex items-center justify-center gap-3">
+                  Confirmar Resultados <ArrowRight size={18} />
+                </button>
               </div>
            </div>
         )}
@@ -482,9 +366,9 @@ const SimulationRoom: React.FC<SimulationRoomProps> = ({ userTeam, rivals, round
   );
 };
 
-const ChevronRight = ({ size }: { size: number }) => (
+const ArrowRight = ({ size }: { size: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M9 18l6-6-6-6" />
+    <path d="M5 12h14M12 5l7 7-7 7" />
   </svg>
 );
 

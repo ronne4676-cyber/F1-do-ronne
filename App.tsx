@@ -19,14 +19,15 @@ import Upgrades from './components/Upgrades';
 import DevelopmentLog from './components/DevelopmentLog';
 import TeamSelection from './components/TeamSelection';
 import DataPackEditor from './components/DataPackEditor';
+import CarVisualizer from './components/CarVisualizer';
 import { playConfirmSFX, playUpgradeSFX, playNotificationSFX } from './utils/audio';
-// Fixed: Added Mic2 to the lucide-react imports list
-import { LayoutDashboard, Users, Zap, Play, History, ShieldAlert, Wrench, Hammer, Save, Trash2, Database, Mic2 } from 'lucide-react';
+import { LayoutDashboard, Users, Zap, Play, History, ShieldAlert, Wrench, Hammer, Save, Trash2, Database, Mic2, LogOut, Sparkles, Settings } from 'lucide-react';
 
 const SAVE_KEY = 'GP_STRATEGIST_SAVE_V2';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'drivers' | 'engines' | 'upgrades' | 'race' | 'history' | 'datapack'>('dashboard');
+  const [showLaunchModal, setShowLaunchModal] = useState(false);
   
   const [gameState, setGameState] = useState<GameState>(() => {
     const saved = localStorage.getItem(SAVE_KEY);
@@ -59,10 +60,29 @@ const App: React.FC = () => {
   useEffect(() => {
     if (notification) {
       playNotificationSFX();
-      const timer = setTimeout(() => setNotification(null), 6000);
+      const timer = setTimeout(() => setNotification(null), 4000);
       return () => clearTimeout(timer);
     }
   }, [notification]);
+
+  const handleManualSave = () => {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(gameState));
+    playConfirmSFX();
+    setNotification({ title: 'Jogo Salvo', msg: 'Progresso sincronizado com sucesso.', type: 'info' });
+  };
+
+  const handleBackToMenu = () => {
+    if (window.confirm("Voltar ao menu principal? Todo progresso não salvo será perdido.")) {
+      setGameState({
+        userTeam: {} as Team,
+        rivalTeams: [],
+        currentRound: 1,
+        isSetupComplete: false,
+        history: []
+      });
+      setActiveTab('dashboard');
+    }
+  };
 
   const handleFinishTeamSelection = (teamData: { name: string, color: string, finances: number, bonusType: string, logo?: string }) => {
     const template = TEAM_TEMPLATES.find(t => t.color === teamData.color);
@@ -114,6 +134,7 @@ const App: React.FC = () => {
       isSetupComplete: true,
       history: []
     });
+    setShowLaunchModal(true);
   };
 
   const handleUpdateDataPack = (updatedUser: Team, updatedRivals: Team[]) => {
@@ -122,7 +143,7 @@ const App: React.FC = () => {
       userTeam: updatedUser,
       rivalTeams: updatedRivals
     }));
-    setNotification({ title: 'Data Pack Atualizado', msg: 'Novos ativos visuais aplicados com sucesso.', type: 'info' });
+    setNotification({ title: 'Ativos Atualizados', msg: 'As cores e logos foram sincronizados.', type: 'info' });
   };
 
   const handleRaceFinished = async (results: RaceResult[], aiCommentary: string, interview?: string) => {
@@ -157,104 +178,145 @@ const App: React.FC = () => {
     setActiveTab('dashboard');
   };
 
-  const handleMaintenance = () => {
-    const cost = 10000000;
-    if (gameState.userTeam.finances >= cost) {
-      setGameState(prev => ({
-        ...prev,
-        userTeam: {
-          ...prev.userTeam,
-          finances: prev.userTeam.finances - cost,
-          engine: { ...prev.userTeam.engine, condition: 100 }
-        }
-      }));
-      setNotification({ title: 'Revisão Concluída', msg: 'O motor foi restaurado para 100% de integridade.', type: 'info' });
-    }
-  };
-
   if (!gameState.isSetupComplete) {
     return <TeamSelection onSelect={handleFinishTeamSelection} />;
   }
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-[#0f172a] text-slate-100">
-      <nav className="w-full lg:w-64 bg-slate-900 border-b lg:border-r border-slate-800 flex flex-col shrink-0">
-        <div className="p-4 lg:p-6 pb-2">
-          <div className="flex items-center gap-2 mb-1">
-            <div className="bg-red-600 p-1 rounded-lg shrink-0 flex items-center justify-center overflow-hidden w-8 h-8" style={{ backgroundColor: gameState.userTeam.color }}>
-              {gameState.userTeam.logo ? <img src={gameState.userTeam.logo} className="w-full h-full object-contain" /> : <Zap size={18} className="text-white" />}
+      
+      {/* Modal de Lançamento (Dia 1 da Temporada) */}
+      {showLaunchModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/95 backdrop-blur-2xl animate-fadeIn">
+          <div className="max-w-xl w-full text-center space-y-6">
+            <div className="flex flex-col items-center justify-center">
+              <Sparkles className="text-yellow-400 mb-2 animate-bounce" size={40} />
+              <h1 className="text-4xl lg:text-6xl font-black italic uppercase tracking-tighter text-white">Car Launch 2025</h1>
+              <p className="text-slate-500 font-bold uppercase tracking-[0.4em] text-[10px] mt-1">A New Era Begins</p>
             </div>
-            <h1 className="text-lg font-black italic tracking-tighter uppercase truncate">{gameState.userTeam.name}</h1>
+            
+            <div className="relative h-[250px] lg:h-[350px] flex items-center justify-center animate-slideUp">
+               <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10" />
+               <div className="absolute -inset-10 bg-blue-500/10 blur-[80px] rounded-full animate-pulse" style={{ backgroundColor: gameState.userTeam.color + '25' }} />
+               <CarVisualizer stats={gameState.userTeam.car} color={gameState.userTeam.color} />
+            </div>
+
+            <div className="space-y-2">
+              <h2 className="text-2xl font-black italic uppercase text-white tracking-tight">{gameState.userTeam.name}</h2>
+              <div className="flex gap-2 justify-center">
+                <div className="bg-slate-900 border border-slate-800 px-3 py-1 rounded-lg text-[9px] font-black uppercase text-slate-400">Power: {gameState.userTeam.car.power} HP</div>
+                <div className="bg-slate-900 border border-slate-800 px-3 py-1 rounded-lg text-[9px] font-black uppercase text-slate-400">Aero: {gameState.userTeam.car.aero}%</div>
+              </div>
+            </div>
+
+            <button 
+              onClick={() => setShowLaunchModal(false)}
+              className="w-full py-4 bg-white text-slate-950 rounded-xl font-black uppercase italic tracking-widest text-lg hover:bg-emerald-400 hover:text-white transition-all shadow-2xl active:scale-95"
+            >
+              Iniciar Temporada
+            </button>
           </div>
-          <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Team Manager Edition</p>
+        </div>
+      )}
+
+      {/* Navegação Otimizada para Mobile */}
+      <nav className="w-full lg:w-64 bg-slate-900 border-b lg:border-r border-slate-800 flex flex-col shrink-0 lg:h-screen lg:sticky lg:top-0">
+        <div className="p-4 lg:p-6 pb-2 flex lg:flex-col justify-between items-center lg:items-start gap-2">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 lg:w-10 lg:h-10 rounded-lg shrink-0 flex items-center justify-center overflow-hidden" style={{ backgroundColor: gameState.userTeam.color }}>
+              {gameState.userTeam.logo ? <img src={gameState.userTeam.logo} className="w-full h-full object-contain" /> : <Zap size={16} className="text-white" />}
+            </div>
+            <h1 className="text-sm lg:text-lg font-black italic tracking-tighter uppercase truncate max-w-[150px] lg:max-w-none">{gameState.userTeam.name}</h1>
+          </div>
+          <p className="text-[7px] lg:text-[9px] font-bold text-slate-500 uppercase tracking-widest lg:mt-1">Manager V2.5</p>
         </div>
 
-        <div className="flex-1 px-2 space-y-0.5 py-4 overflow-y-auto lg:px-4">
-          <NavItem active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutDashboard size={18} />} label="Dashboard" />
+        <div className="flex lg:flex-col overflow-x-auto lg:overflow-y-auto px-4 lg:px-3 py-2 lg:py-4 gap-1 no-scrollbar flex-1 border-t lg:border-t-0 border-slate-800">
+          <NavItem active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutDashboard size={18} />} label="Início" />
           <NavItem active={activeTab === 'upgrades'} onClick={() => setActiveTab('upgrades')} icon={<Wrench size={18} />} label="P&D" />
-          <NavItem active={activeTab === 'drivers'} onClick={() => setActiveTab('drivers')} icon={<Users size={18} />} label="Mercado" />
-          <NavItem active={activeTab === 'datapack'} onClick={() => setActiveTab('datapack')} icon={<Database size={18} />} label="Data Pack" />
-          <NavItem active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<History size={18} />} label="Histórico" />
+          <NavItem active={activeTab === 'drivers'} onClick={() => setActiveTab('drivers')} icon={<Users size={18} />} label="Pilotos" />
+          <NavItem active={activeTab === 'datapack'} onClick={() => setActiveTab('datapack')} icon={<Database size={18} />} label="Estilo" />
+          <NavItem active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<History size={18} />} label="Logs" />
           
-          <div className="pt-4 px-2">
+          <div className="hidden lg:block pt-4">
             <button 
               onClick={() => setActiveTab('race')}
               disabled={gameState.userTeam.drivers.length === 0}
-              className="w-full py-3 bg-red-600 hover:bg-red-500 rounded-xl flex items-center justify-center gap-2 font-bold transition-all shadow-lg active:scale-95 text-sm"
+              className="w-full py-3 bg-red-600 hover:bg-red-500 rounded-xl flex items-center justify-center gap-2 font-bold transition-all shadow-lg active:scale-95 text-xs"
+              style={{ backgroundColor: gameState.userTeam.color }}
             >
-              <Play fill="currentColor" size={16} /> Próximo GP
+              <Play fill="currentColor" size={14} /> Próximo GP
             </button>
           </div>
         </div>
 
-        <div className="p-4 bg-slate-950/50 border-t border-slate-800">
-          <button onClick={() => { localStorage.removeItem(SAVE_KEY); window.location.reload(); }} className="w-full text-slate-500 hover:text-red-500 px-3 py-2 rounded-lg transition-all flex items-center gap-2 text-[10px] font-bold">
-            <Trash2 size={12} /> Resetar Jogo
+        {/* Botões de Ação Mobile/Desktop */}
+        <div className="p-4 lg:p-4 bg-slate-950/50 border-t border-slate-800 grid grid-cols-2 lg:grid-cols-1 gap-2">
+          <button onClick={handleManualSave} className="flex-1 py-2.5 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-400 rounded-lg transition-all flex items-center justify-center gap-2 text-[9px] font-black uppercase tracking-widest border border-emerald-500/20">
+            <Save size={12} /> Salvar
+          </button>
+          <button onClick={handleBackToMenu} className="flex-1 py-2.5 bg-slate-800 hover:bg-red-600/10 text-slate-500 hover:text-red-500 rounded-lg transition-all flex items-center justify-center gap-2 text-[9px] font-black uppercase tracking-widest border border-transparent hover:border-red-500/20">
+            <LogOut size={12} /> Sair
           </button>
         </div>
       </nav>
 
-      <main className="flex-1 overflow-y-auto p-4 lg:p-8">
+      <main className="flex-1 overflow-y-auto p-4 lg:p-8 relative">
+        {/* Botão flutuante GP para mobile */}
+        <div className="lg:hidden fixed bottom-6 right-6 z-40">
+           <button 
+              onClick={() => setActiveTab('race')}
+              disabled={gameState.userTeam.drivers.length === 0}
+              className="w-16 h-16 rounded-full flex items-center justify-center shadow-2xl active:scale-90 transition-transform bg-red-600 text-white"
+              style={{ backgroundColor: gameState.userTeam.color }}
+            >
+              <Play fill="currentColor" size={24} />
+            </button>
+        </div>
+
         {notification && (
-          <div className={`fixed top-4 right-4 z-50 p-3 rounded-xl border flex gap-3 items-start shadow-2xl animate-bounceIn max-w-[280px] lg:max-w-sm ${notification.type === 'error' ? 'bg-red-900 border-red-700 text-red-100' : 'bg-emerald-900 border-emerald-700 text-emerald-100'}`}>
-            <ShieldAlert className="shrink-0" size={18} />
+          <div className="fixed top-4 right-4 z-[100] p-3 rounded-xl border bg-slate-900 border-slate-700 text-slate-100 flex gap-3 items-center shadow-2xl animate-bounceIn max-w-[250px]">
+            <div className={`p-1.5 rounded-lg ${notification.type === 'error' ? 'bg-red-500' : 'bg-emerald-500'}`}>
+              <ShieldAlert size={16} />
+            </div>
             <div>
-              <h5 className="font-bold uppercase tracking-widest text-[9px] mb-0.5">{notification.title}</h5>
-              <p className="text-xs opacity-90 leading-tight">{notification.msg}</p>
+              <h5 className="font-bold text-[9px] uppercase tracking-widest">{notification.title}</h5>
+              <p className="text-[10px] opacity-80 leading-tight">{notification.msg}</p>
             </div>
           </div>
         )}
 
-        <div className="max-w-7xl mx-auto space-y-6">
-          <div className="flex justify-between items-end">
+        <div className="max-w-6xl mx-auto space-y-4 lg:space-y-6">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-3">
              <div>
-               <h1 className="text-2xl lg:text-3xl font-black uppercase italic tracking-tight">
-                 {activeTab === 'dashboard' ? 'Visão Geral' : activeTab === 'datapack' ? 'Editor de Ativos' : 'Estrategista GP'}
+               <h1 className="text-xl lg:text-3xl font-black uppercase italic tracking-tight">
+                 {activeTab === 'dashboard' ? 'Overview' : activeTab === 'datapack' ? 'Team Style' : 'GP Strategist'}
                </h1>
-               <div className="flex items-center gap-2 mt-1">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Sincronizado com FIA Data Center</p>
+               <div className="flex items-center gap-2 mt-0.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <p className="text-slate-500 text-[8px] font-bold uppercase tracking-widest">Sincronizado via Satélite</p>
                </div>
              </div>
-             <div className="flex gap-2">
-               <div className="bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl">
-                 <div className="text-[8px] text-slate-500 uppercase font-black">Motor</div>
-                 <div className={`font-mono font-bold text-xs ${gameState.userTeam.engine.condition < 40 ? 'text-red-400 animate-pulse' : 'text-blue-400'}`}>
+             
+             <div className="flex gap-2 w-full md:w-auto">
+               <div className="flex-1 md:flex-none bg-slate-800/50 border border-slate-700 px-3 py-1.5 rounded-lg flex flex-col justify-center">
+                 <div className="text-[7px] text-slate-500 uppercase font-black">Chassi</div>
+                 <div className={`font-mono font-bold text-[10px] ${gameState.userTeam.engine.condition < 40 ? 'text-red-400' : 'text-blue-400'}`}>
                    {gameState.userTeam.engine.condition.toFixed(0)}%
                  </div>
                </div>
-               <div className="bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl">
-                 <div className="text-[8px] text-slate-500 uppercase font-black">Finanças</div>
-                 <div className="font-mono font-bold text-emerald-400 text-xs">
+               <div className="flex-1 md:flex-none bg-slate-800/50 border border-slate-700 px-3 py-1.5 rounded-lg flex flex-col justify-center">
+                 <div className="text-[7px] text-slate-500 uppercase font-black">Finanças</div>
+                 <div className="font-mono font-bold text-emerald-400 text-[10px]">
                    ${(gameState.userTeam.finances / 1000000).toFixed(1)}M
                  </div>
                </div>
              </div>
           </div>
 
-          <div className="min-h-[500px]">
+          <div className="min-h-[400px]">
             {activeTab === 'dashboard' && <Dashboard team={gameState.userTeam} />}
-            {activeTab === 'upgrades' && <Upgrades team={gameState.userTeam} onUpgrade={(s, c) => {}} />}
+            {activeTab === 'upgrades' && <Upgrades team={gameState.userTeam} onUpgrade={() => {}} />}
             {activeTab === 'drivers' && (
               <DriverMarket 
                 currentDrivers={gameState.userTeam.drivers} 
@@ -271,29 +333,29 @@ const App: React.FC = () => {
               <SimulationRoom userTeam={gameState.userTeam} rivals={gameState.rivalTeams} round={gameState.currentRound} onFinish={handleRaceFinished} />
             )}
             {activeTab === 'history' && (
-              <div className="space-y-6 animate-fadeIn">
+              <div className="space-y-4 animate-fadeIn pb-20 lg:pb-12">
                  {gameState.history.length === 0 ? (
-                   <div className="text-center py-20 text-slate-600 italic">Nenhum dado de corrida registrado.</div>
+                   <div className="text-center py-20 text-slate-700 italic text-sm">Nenhum dado de corrida registrado.</div>
                  ) : (
                    gameState.history.map((h, i) => (
-                     <div key={i} className="bg-slate-800/40 border border-slate-800 rounded-3xl p-6">
-                        <div className="flex justify-between items-center mb-4">
-                           <h3 className="text-lg font-black uppercase italic text-white">GP de {h.trackName}</h3>
-                           <span className="text-[10px] font-black text-slate-500 uppercase">Rodada {h.round}</span>
+                     <div key={i} className="bg-slate-800/30 border border-slate-800 rounded-2xl p-4 lg:p-6">
+                        <div className="flex justify-between items-center mb-3">
+                           <h3 className="text-sm lg:text-lg font-black uppercase italic text-white">GP de {h.trackName}</h3>
+                           <span className="text-[8px] lg:text-[10px] font-black text-slate-500 uppercase tracking-widest">Rodada {h.round}</span>
                         </div>
                         {h.interview && (
-                          <div className="bg-blue-900/10 border-l-4 border-blue-500 p-4 rounded-r-xl mb-4 italic text-xs text-slate-300">
-                             <div className="flex items-center gap-2 mb-1 text-blue-400 not-italic font-black text-[9px]">
-                               <Mic2 size={12} /> ENTREVISTA PÓS-RACE
+                          <div className="bg-blue-900/10 border-l-2 border-blue-500 p-3 rounded-r-lg mb-4 italic text-[11px] text-slate-300">
+                             <div className="flex items-center gap-2 mb-1 text-blue-400 not-italic font-black text-[8px] uppercase">
+                               <Mic2 size={10} /> Entrevista Paddock
                              </div>
                              "{h.interview}"
                           </div>
                         )}
                         <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
                            {h.results.slice(0, 5).map(r => (
-                             <div key={r.teamId} className="bg-slate-900/50 p-3 rounded-xl border border-slate-800">
-                                <div className="text-[10px] font-black text-slate-500">P{r.position}</div>
-                                <div className="text-xs font-bold text-white truncate">{r.teamName}</div>
+                             <div key={r.teamId} className="bg-slate-900/50 p-2 rounded-lg border border-slate-800">
+                                <div className="text-[8px] font-black text-slate-500">P{r.position}</div>
+                                <div className="text-[10px] font-bold text-white truncate">{r.teamName}</div>
                              </div>
                            ))}
                         </div>
@@ -310,8 +372,12 @@ const App: React.FC = () => {
 };
 
 const NavItem = ({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: any, label: string }) => (
-  <button onClick={onClick} className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all font-bold text-xs ${active ? 'bg-slate-800 text-white border border-slate-700' : 'text-slate-500 hover:text-white hover:bg-slate-800/50'}`}>
-    {icon} <span>{label}</span>
+  <button 
+    onClick={onClick} 
+    className={`flex items-center justify-center lg:justify-start gap-2 px-4 lg:px-3 py-2.5 lg:py-3 rounded-lg lg:rounded-xl transition-all font-bold text-[10px] lg:text-xs min-w-[80px] lg:min-w-0 ${active ? 'bg-slate-800 text-white border border-slate-700 lg:shadow-sm' : 'text-slate-500 hover:text-white hover:bg-slate-800/50'}`}
+  >
+    <span className={active ? 'scale-110' : ''}>{icon}</span>
+    <span className="truncate">{label}</span>
   </button>
 );
 
