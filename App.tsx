@@ -28,6 +28,8 @@ const SAVE_KEY = 'GP_STRATEGIST_SAVE_V2';
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'drivers' | 'engines' | 'upgrades' | 'race' | 'history' | 'datapack'>('dashboard');
   const [showLaunchModal, setShowLaunchModal] = useState(false);
+  // Tracking max allowed drivers based on career mode
+  const [maxDrivers, setMaxDrivers] = useState(2);
   
   const [gameState, setGameState] = useState<GameState>(() => {
     const saved = localStorage.getItem(SAVE_KEY);
@@ -84,11 +86,20 @@ const App: React.FC = () => {
     }
   };
 
-  const handleFinishTeamSelection = (teamData: { name: string, color: string, finances: number, bonusType: string, logo?: string }) => {
+  // Fixed signature to handle singleDriverMode from TeamSelection
+  const handleFinishTeamSelection = (teamData: { name: string, color: string, finances: number, bonusType: string, logo?: string, singleDriverMode: boolean }) => {
     const template = TEAM_TEMPLATES.find(t => t.color === teamData.color);
-    const officialDrivers = template 
+    let officialDrivers = template 
       ? ALL_DRIVERS.filter(d => template.driverIds?.includes(d.id))
-      : [INITIAL_DRIVERS[0], INITIAL_DRIVERS[2]];
+      : [ALL_DRIVERS[0], ALL_DRIVERS[1]];
+
+    // Adjusting based on career mode
+    if (teamData.singleDriverMode) {
+      officialDrivers = [officialDrivers[0]];
+      setMaxDrivers(1);
+    } else {
+      setMaxDrivers(2);
+    }
 
     const userTeam: Team = {
       id: 'user_team_1',
@@ -146,7 +157,53 @@ const App: React.FC = () => {
     setNotification({ title: 'Ativos Atualizados', msg: 'As cores e logos foram sincronizados.', type: 'info' });
   };
 
-  const handleRaceFinished = async (results: RaceResult[], aiCommentary: string, interview?: string) => {
+  // Logic for hiring new drivers
+  const handleHireDriver = (driver: Driver) => {
+    if (gameState.userTeam.drivers.length >= maxDrivers) return;
+    const bonus = driver.salary * 0.2;
+    setGameState(prev => ({
+      ...prev,
+      userTeam: {
+        ...prev.userTeam,
+        finances: prev.userTeam.finances - bonus,
+        drivers: [...prev.userTeam.drivers, { ...driver, contractYears: 1 }]
+      }
+    }));
+    playConfirmSFX();
+    setNotification({ title: 'Contratação Concluída', msg: `${driver.name} assinou com a equipe.`, type: 'info' });
+  };
+
+  // Logic for firing drivers
+  const handleFireDriver = (driverId: string) => {
+    const driver = gameState.userTeam.drivers.find(d => d.id === driverId);
+    if (!driver) return;
+    const penalty = driver.salary * 0.25;
+    setGameState(prev => ({
+      ...prev,
+      userTeam: {
+        ...prev.userTeam,
+        finances: prev.userTeam.finances - penalty,
+        drivers: prev.userTeam.drivers.filter(d => d.id !== driverId)
+      }
+    }));
+    setNotification({ title: 'Vínculo Encerrado', msg: `Multa de rescisão: $${(penalty / 1000000).toFixed(1)}M aplicada.`, type: 'error' });
+  };
+
+  // Logic for renewing driver contracts
+  const handleRenewDriver = (driverId: string, years: number, cost: number) => {
+    setGameState(prev => ({
+      ...prev,
+      userTeam: {
+        ...prev.userTeam,
+        finances: prev.userTeam.finances - cost,
+        drivers: prev.userTeam.drivers.map(d => d.id === driverId ? { ...d, contractYears: d.contractYears + years } : d)
+      }
+    }));
+    setNotification({ title: 'Contrato Renovado', msg: 'Papéis assinados com sucesso.', type: 'info' });
+  };
+
+  // Updated signature to handle penalties from SimulationRoom
+  const handleRaceFinished = async (results: RaceResult[], aiCommentary: string, newPenalties: Penalty[]) => {
     const userResult = results.find(r => r.teamId === gameState.userTeam.id);
     const earnedPoints = userResult?.dnf ? 0 : ([25, 18, 15, 12, 10, 8, 6, 4, 2, 1][(userResult?.position || 11) - 1] || 0);
     const prizeMoney = userResult?.dnf ? 1000000 : ((20 - (userResult?.position || 20)) * 1000000 + 5000000);
@@ -159,14 +216,14 @@ const App: React.FC = () => {
         points: prev.userTeam.points + earnedPoints,
         finances: prev.userTeam.finances + prizeMoney - payroll,
         engine: { ...prev.userTeam.engine, condition: userResult?.engineCondition || prev.userTeam.engine.condition },
-        drivers: prev.userTeam.drivers.map(d => ({ ...d, contractYears: Math.max(0, d.contractYears - 0.2) })).filter(d => d.contractYears > 0)
+        drivers: prev.userTeam.drivers.map(d => ({ ...d, contractYears: Math.max(0, d.contractYears - 0.2) })).filter(d => d.contractYears > 0),
+        penalties: [...prev.userTeam.penalties, ...newPenalties]
       },
       currentRound: prev.currentRound + 1,
       history: [...prev.history, { 
         round: prev.currentRound, 
         trackName: CALENDAR[(prev.currentRound - 1) % CALENDAR.length].name, 
         results,
-        interview
       }]
     }));
 
@@ -322,8 +379,10 @@ const App: React.FC = () => {
                 currentDrivers={gameState.userTeam.drivers} 
                 availableDrivers={ALL_DRIVERS} 
                 finances={gameState.userTeam.finances} 
-                onHire={() => {}} 
-                onRenew={() => {}}
+                onHire={handleHireDriver} 
+                onFire={handleFireDriver}
+                onRenew={handleRenewDriver}
+                maxDrivers={maxDrivers}
               />
             )}
             {activeTab === 'datapack' && (

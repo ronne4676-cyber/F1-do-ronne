@@ -2,6 +2,8 @@
 import { GoogleGenAI } from "@google/genai";
 import { RaceResult, Team } from "../types";
 
+// Para usar sua chave diretamente: substitua process.env.API_KEY por "SUA_CHAVE_AQUI"
+// Exemplo: const ai = new GoogleGenAI({ apiKey: "AIza..." });
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export async function generateRaceCommentary(results: RaceResult[], teamName: string): Promise<string> {

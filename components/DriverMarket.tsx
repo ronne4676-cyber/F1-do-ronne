@@ -1,28 +1,29 @@
 
 import React, { useState } from 'react';
 import { Driver } from '../types';
-import { UserPlus, Star, Calendar, RefreshCcw, AlertTriangle, UserCheck, History, Heart, Info, X, DollarSign, Clock } from 'lucide-react';
+import { UserPlus, Star, Calendar, RefreshCcw, AlertTriangle, UserCheck, History, Heart, Info, X, DollarSign, Clock, UserMinus } from 'lucide-react';
 import { formatCurrency } from '../utils/economy';
 
 interface DriverMarketProps {
   currentDrivers: Driver[];
   availableDrivers: Driver[];
   onHire: (driver: Driver) => void;
+  onFire: (driverId: string) => void;
   onRenew: (driverId: string, years: number, cost: number) => void;
   finances: number;
+  maxDrivers: number;
 }
 
-const DriverMarket: React.FC<DriverMarketProps> = ({ currentDrivers, availableDrivers, onHire, onRenew, finances }) => {
+const DriverMarket: React.FC<DriverMarketProps> = ({ currentDrivers, availableDrivers, onHire, onFire, onRenew, finances, maxDrivers }) => {
   const [selectedProfile, setSelectedProfile] = useState<Driver | null>(null);
   const [renewalPilot, setRenewalPilot] = useState<string | null>(null);
   const [renewalYears, setRenewalYears] = useState(1);
 
-  const isAtCapacity = currentDrivers.length >= 2;
+  const isAtCapacity = currentDrivers.length >= maxDrivers;
 
   const freeAgents = availableDrivers.filter(d => !currentDrivers.some(cd => cd.id === d.id));
 
   const calculateRenewalCost = (driver: Driver, years: number) => {
-    // Custo base de renovação é o salário anual * anos + bônus de 10%
     return Math.floor((driver.salary * years) * 1.1);
   };
 
@@ -87,15 +88,16 @@ const DriverMarket: React.FC<DriverMarketProps> = ({ currentDrivers, availableDr
                   <div className="pt-4 border-t border-slate-800">
                     <p className="text-[9px] text-slate-500 font-bold uppercase mb-2">Bônus de Assinatura (20%): {formatCurrency(selectedProfile.salary * 0.2)}</p>
                     <button
-                      disabled={finances < (selectedProfile.salary * 0.2)}
+                      disabled={isAtCapacity || finances < (selectedProfile.salary * 0.2)}
                       onClick={() => {
                         onHire(selectedProfile);
                         setSelectedProfile(null);
                       }}
-                      className={`w-full py-4 rounded-xl font-black uppercase italic tracking-widest text-xs transition-all ${finances >= (selectedProfile.salary * 0.2) ? 'bg-white text-slate-950 hover:bg-emerald-400 hover:text-white' : 'bg-slate-800 text-slate-600'}`}
+                      className={`w-full py-4 rounded-xl font-black uppercase italic tracking-widest text-xs transition-all ${!isAtCapacity && finances >= (selectedProfile.salary * 0.2) ? 'bg-white text-slate-950 hover:bg-emerald-400 hover:text-white' : 'bg-slate-800 text-slate-600'}`}
                     >
-                      Assinar com a Equipe
+                      {isAtCapacity ? 'Grid Lotado' : 'Assinar com a Equipe'}
                     </button>
+                    {isAtCapacity && <p className="text-[8px] text-red-500 mt-2 text-center uppercase font-black">Rescinda um contrato antes de contratar.</p>}
                   </div>
                </div>
             </div>
@@ -107,42 +109,51 @@ const DriverMarket: React.FC<DriverMarketProps> = ({ currentDrivers, availableDr
       <section>
         <div className="flex justify-between items-end mb-6">
           <div>
-            <h2 className="text-2xl font-black uppercase italic tracking-tight text-slate-100">Contratos Ativos</h2>
-            <p className="text-slate-500 text-sm font-medium">Gestão de folha salarial e extensões.</p>
+            <h2 className="text-2xl font-black uppercase italic tracking-tight text-slate-100">Escalação Ativa</h2>
+            <p className="text-slate-500 text-sm font-medium">Gestão de pilotos sob contrato.</p>
           </div>
           <div className="bg-slate-800/50 px-4 py-2 rounded-xl border border-slate-700 text-xs font-black uppercase tracking-widest text-slate-400">
-            Escalação: <span className={isAtCapacity ? 'text-blue-400' : 'text-emerald-400'}>{currentDrivers.length}/2</span>
+            Escalação: <span className={isAtCapacity ? 'text-blue-400' : 'text-emerald-400'}>{currentDrivers.length}/{maxDrivers}</span>
           </div>
         </div>
 
         {currentDrivers.length === 0 ? (
           <div className="bg-slate-800/20 border-2 border-dashed border-slate-800 rounded-[2rem] py-16 text-center">
             <UserPlus size={48} className="mx-auto text-slate-700 mb-4" />
-            <h3 className="text-xl font-bold text-slate-400">Sem Pilotos</h3>
-            <p className="text-slate-500 mt-2">Você precisa contratar pilotos para correr.</p>
+            <h3 className="text-xl font-bold text-slate-400">Vaga em Aberto</h3>
+            <p className="text-slate-500 mt-2">Você precisa de pelo menos um piloto para alinhar no grid.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {currentDrivers.map(driver => (
-              <div key={driver.id} className="bg-slate-800/50 border border-slate-700 p-6 rounded-[2rem] flex flex-col gap-6 relative overflow-hidden">
+              <div key={driver.id} className="bg-slate-800/50 border border-slate-700 p-6 rounded-[2rem] flex flex-col gap-6 relative overflow-hidden group">
                  <div className="flex gap-6">
                    <div className="relative">
                       <img src={driver.image} alt="" className="w-24 h-24 rounded-3xl object-cover border-2 border-slate-700" />
                       <div className="absolute -top-2 -left-2 bg-slate-900 text-white w-8 h-8 rounded-lg flex items-center justify-center font-black italic border border-slate-700 text-xs">#{driver.number || '??'}</div>
                    </div>
                    <div className="flex-1 space-y-4">
-                      <div>
-                         <h3 className="text-xl font-black uppercase italic text-white leading-tight">{driver.name}</h3>
-                         <div className="flex items-center gap-4 mt-1">
-                            <span className="text-[9px] font-black text-slate-500 uppercase">OVR: <span className="text-emerald-400">{driver.ovr}</span></span>
-                            <span className="text-[9px] font-black text-slate-500 uppercase">Salário/Corrida: <span className="text-emerald-400">{formatCurrency(driver.salary / 5)}</span></span>
-                         </div>
+                      <div className="flex justify-between items-start">
+                        <div>
+                           <h3 className="text-xl font-black uppercase italic text-white leading-tight">{driver.name}</h3>
+                           <div className="flex items-center gap-4 mt-1">
+                              <span className="text-[9px] font-black text-slate-500 uppercase">OVR: <span className="text-emerald-400">{driver.ovr}</span></span>
+                              <span className="text-[9px] font-black text-slate-500 uppercase">Salário: <span className="text-emerald-400">{formatCurrency(driver.salary / 5)}/GP</span></span>
+                           </div>
+                        </div>
+                        <button 
+                          onClick={() => { if(confirm(`Rescindir contrato de ${driver.name}? Uma multa de 25% do salário anual será aplicada.`)) onFire(driver.id); }}
+                          className="p-2 bg-red-500/10 text-red-500 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500 hover:text-white"
+                          title="Rescindir Contrato"
+                        >
+                          <UserMinus size={16} />
+                        </button>
                       </div>
                       <div className="space-y-1.5">
                         <div className="flex justify-between text-[8px] font-black text-slate-500 uppercase">
                           <span>Duração do Contrato</span>
                           <span className={driver.contractYears < 0.4 ? 'text-red-400 animate-pulse' : 'text-blue-400'}>
-                            {driver.contractYears < 0.4 ? 'EXPIRANDO EM BREVE' : `${driver.contractYears.toFixed(1)} ANOS RESTANTES`}
+                            {driver.contractYears < 0.4 ? 'EXPIRANDO' : `${driver.contractYears.toFixed(1)} ANOS`}
                           </span>
                         </div>
                         <div className="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
@@ -195,12 +206,12 @@ const DriverMarket: React.FC<DriverMarketProps> = ({ currentDrivers, availableDr
         )}
       </section>
 
-      {/* Free Agents Section */}
+      {/* Mercado Section */}
       <section>
         <div className="flex justify-between items-end mb-8">
            <div className="space-y-1">
-             <h2 className="text-2xl font-black uppercase italic tracking-tight text-white">Mercado de Pilotos</h2>
-             <p className="text-slate-500 text-sm font-medium">Analise perfis e negocie contratos oficiais.</p>
+             <h2 className="text-2xl font-black uppercase italic tracking-tight text-white">Mercado de Transferências</h2>
+             <p className="text-slate-500 text-sm font-medium">Contrate novos talentos para sua escuderia.</p>
            </div>
         </div>
 
@@ -215,52 +226,26 @@ const DriverMarket: React.FC<DriverMarketProps> = ({ currentDrivers, availableDr
                    <h3 className="text-xl font-black uppercase italic text-white truncate">{driver.name}</h3>
                    <div className="grid grid-cols-2 gap-4">
                      <div>
-                       <p className="text-[8px] font-black text-slate-500 uppercase">Salário Esperado</p>
-                       <p className="text-xs font-black text-emerald-400">{formatCurrency(driver.salary)}/y</p>
+                       <p className="text-[8px] font-black text-slate-500 uppercase">Salário Anual</p>
+                       <p className="text-xs font-black text-emerald-400">{formatCurrency(driver.salary)}</p>
                      </div>
                      <div>
-                       <p className="text-[8px] font-black text-slate-500 uppercase">Interesse</p>
-                       <p className="text-xs font-black text-blue-400">ALTO</p>
+                       <p className="text-[8px] font-black text-slate-500 uppercase">Status</p>
+                       <p className="text-xs font-black text-blue-400">AGENTE LIVRE</p>
                      </div>
                    </div>
                    <button 
+                     disabled={isAtCapacity}
                      onClick={() => setSelectedProfile(driver)}
-                     className="w-full py-4 bg-slate-100 hover:bg-white text-slate-950 rounded-2xl font-black uppercase italic tracking-widest text-[10px] transition-all flex items-center justify-center gap-2 shadow-lg"
+                     className={`w-full py-4 rounded-2xl font-black uppercase italic tracking-widest text-[10px] transition-all flex items-center justify-center gap-2 shadow-lg ${isAtCapacity ? 'bg-slate-800 text-slate-600 cursor-not-allowed' : 'bg-slate-100 hover:bg-white text-slate-950'}`}
                    >
-                     <Info size={14} /> Analisar Proposta
+                     {isAtCapacity ? <AlertTriangle size={14} /> : <Info size={14} />}
+                     {isAtCapacity ? 'Grid Lotado' : 'Analisar Proposta'}
                    </button>
                 </div>
              </div>
            ))}
         </div>
-      </section>
-      
-      {/* Regular Grid Section */}
-      <section>
-         <h2 className="text-xl font-black uppercase italic text-slate-600 mb-6 flex items-center gap-3">
-           <Star size={18} /> Scouting Report 2025
-         </h2>
-         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {availableDrivers.map(driver => (
-              <div 
-                key={driver.id} 
-                className={`bg-slate-800/20 border border-slate-800 p-4 rounded-2xl group hover:bg-slate-800/40 transition-all cursor-pointer ${currentDrivers.some(cd => cd.id === driver.id) ? 'opacity-40 grayscale pointer-events-none' : ''}`} 
-                onClick={() => setSelectedProfile(driver)}
-              >
-                 <div className="flex items-center gap-3 mb-2">
-                    <img src={driver.image} alt="" className="w-10 h-10 rounded-lg bg-slate-900 border border-slate-700" />
-                    <div className="flex-1 min-w-0">
-                       <p className="text-[10px] font-black text-white uppercase truncate">{driver.name}</p>
-                       <p className="text-[8px] font-bold text-slate-500">#{driver.number || '??'}</p>
-                    </div>
-                 </div>
-                 <div className="flex justify-between items-center">
-                    <div className="text-[8px] font-black text-slate-600">OVR {driver.ovr}</div>
-                    <div className="text-[8px] font-black text-emerald-600/50">SCOUTED</div>
-                 </div>
-              </div>
-            ))}
-         </div>
       </section>
     </div>
   );

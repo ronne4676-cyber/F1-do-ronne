@@ -1,15 +1,16 @@
 
 import React, { useState } from 'react';
 import { TEAM_TEMPLATES } from '../constants';
-import { Zap, Check, ChevronRight } from 'lucide-react';
+import { Zap, Check, ChevronRight, User, Users } from 'lucide-react';
 
 interface TeamSelectionProps {
-  onSelect: (teamData: { name: string, color: string, finances: number, bonusType: string, logo?: string }) => void;
+  onSelect: (teamData: { name: string, color: string, finances: number, bonusType: string, logo?: string, singleDriverMode: boolean }) => void;
 }
 
 const TeamSelection: React.FC<TeamSelectionProps> = ({ onSelect }) => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [customName, setCustomName] = useState('');
+  const [singleDriverMode, setSingleDriverMode] = useState(false);
 
   const handleConfirm = () => {
     const template = TEAM_TEMPLATES.find(t => t.id === selectedId);
@@ -19,7 +20,8 @@ const TeamSelection: React.FC<TeamSelectionProps> = ({ onSelect }) => {
         color: template.color,
         finances: template.startingFinances,
         bonusType: template.bonus,
-        logo: template.logo
+        logo: template.logo,
+        singleDriverMode
       });
     }
   };
@@ -41,7 +43,31 @@ const TeamSelection: React.FC<TeamSelectionProps> = ({ onSelect }) => {
               Estrategista GP
             </h1>
           </div>
-          <p className="text-slate-400 text-sm lg:text-xl font-medium tracking-tight">Escolha sua equipe para o Campeonato FIA 2024</p>
+          <p className="text-slate-400 text-sm lg:text-xl font-medium tracking-tight">Escolha sua equipe e modo de gestão para 2025</p>
+        </div>
+
+        {/* Modo de Carreira Selector */}
+        <div className="flex justify-center gap-4 mb-8">
+          <button 
+            onClick={() => setSingleDriverMode(true)}
+            className={`flex items-center gap-3 px-6 py-4 rounded-2xl border-2 transition-all ${singleDriverMode ? 'bg-white text-slate-950 border-white' : 'bg-slate-900/50 text-slate-500 border-slate-800 hover:border-slate-700'}`}
+          >
+            <User size={20} />
+            <div className="text-left">
+              <p className="text-[10px] font-black uppercase tracking-widest leading-none">Modo</p>
+              <p className="text-xs font-bold uppercase italic">Piloto Único</p>
+            </div>
+          </button>
+          <button 
+            onClick={() => setSingleDriverMode(false)}
+            className={`flex items-center gap-3 px-6 py-4 rounded-2xl border-2 transition-all ${!singleDriverMode ? 'bg-white text-slate-950 border-white' : 'bg-slate-900/50 text-slate-500 border-slate-800 hover:border-slate-700'}`}
+          >
+            <Users size={20} />
+            <div className="text-left">
+              <p className="text-[10px] font-black uppercase tracking-widest leading-none">Modo</p>
+              <p className="text-xs font-bold uppercase italic">Equipe Completa</p>
+            </div>
+          </button>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
@@ -54,7 +80,7 @@ const TeamSelection: React.FC<TeamSelectionProps> = ({ onSelect }) => {
               }}
               className={`relative group p-4 lg:p-6 rounded-2xl border-2 transition-all text-left flex flex-col h-full overflow-hidden ${
                 selectedId === template.id 
-                  ? 'bg-slate-900 border-white ring-4 ring-white/10' 
+                  ? 'bg-slate-900 border-white ring-4 ring-white/10 shadow-[0_0_30px_rgba(255,255,255,0.05)]' 
                   : 'bg-slate-900/40 border-slate-800 hover:border-slate-700 hover:bg-slate-900/60'
               }`}
             >
@@ -113,7 +139,7 @@ const TeamSelection: React.FC<TeamSelectionProps> = ({ onSelect }) => {
               onClick={handleConfirm}
               className="w-full md:w-auto px-8 py-4 lg:px-12 lg:py-6 bg-white text-slate-950 rounded-xl lg:rounded-[1.5rem] font-black uppercase italic tracking-widest text-md lg:text-xl flex items-center justify-center gap-3 hover:bg-emerald-400 transition-all shadow-xl group active:scale-95 shrink-0"
             >
-              Assinar com a Equipe
+              Iniciar {singleDriverMode ? 'Carreira Individual' : 'Gestão de Equipe'}
               <ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" />
             </button>
           </div>

@@ -2,7 +2,7 @@
 import React from 'react';
 import { Team } from '../types';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
-import { Wallet, Trophy, Cpu, Zap, Wind, ShieldCheck, Activity, AlertTriangle, Clock } from 'lucide-react';
+import { Wallet, Trophy, Cpu, Zap, Wind, ShieldCheck, Activity, AlertTriangle, Clock, User } from 'lucide-react';
 import CarVisualizer from './CarVisualizer';
 import { formatCurrency } from '../utils/economy';
 
@@ -64,20 +64,24 @@ const Dashboard: React.FC<DashboardProps> = ({ team }) => {
 
             <div className="pt-3 border-t border-slate-700/50">
                <div className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-2">
-                  <Clock size={10} /> Escalação
+                  <User size={10} /> Escalação
                </div>
-               <div className="grid grid-cols-2 gap-2">
-                  {team.drivers.map(d => (
-                    <div key={d.id} className="bg-slate-950/40 p-2 rounded-lg border border-slate-800">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-[8px] font-bold text-slate-400 uppercase truncate max-w-[50px]">{d.name.split(' ').pop()}</span>
-                        <span className={`text-[8px] font-black ${d.contractYears < 0.4 ? 'text-red-400' : 'text-blue-400'}`}>{d.contractYears.toFixed(1)}y</span>
+               <div className={`grid gap-2 ${team.drivers.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                  {team.drivers.length === 0 ? (
+                    <p className="text-[10px] text-red-400 font-black uppercase">Nenhum piloto ativo!</p>
+                  ) : (
+                    team.drivers.map(d => (
+                      <div key={d.id} className="bg-slate-950/40 p-2 rounded-lg border border-slate-800">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[8px] font-bold text-slate-400 uppercase truncate max-w-[80px]">{d.name}</span>
+                          <span className={`text-[8px] font-black ${d.contractYears < 0.4 ? 'text-red-400' : 'text-blue-400'}`}>{d.contractYears.toFixed(1)}y</span>
+                        </div>
+                        <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
+                          <div className={`h-full ${d.contractYears < 0.4 ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${(d.contractYears / 3) * 100}%` }} />
+                        </div>
                       </div>
-                      <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
-                        <div className={`h-full ${d.contractYears < 0.4 ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${(d.contractYears / 3) * 100}%` }} />
-                      </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                </div>
             </div>
           </div>

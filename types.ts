@@ -20,7 +20,9 @@ export enum Weather {
 export enum TireCompound {
   SOFT = 'SOFT',
   MEDIUM = 'MEDIUM',
-  HARD = 'HARD'
+  HARD = 'HARD',
+  INTERMEDIATE = 'INTERMEDIATE',
+  WET = 'WET'
 }
 
 export interface Track {
@@ -69,6 +71,7 @@ export interface Penalty {
   reason: string;
   timestamp: number;
   secondsToServe?: number;
+  isResolved?: boolean;
 }
 
 export interface UpgradeRecord {
